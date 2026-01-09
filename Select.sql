@@ -1,10 +1,7 @@
-
------SELECT
+---SELECT
 --1) Top 5 clientes por gasto total (solo ventas activas)
 --Enunciado:
 --La tienda quiere reconocer a los 5 clientes que más han gastado. Usa un CTE para calcular el total gastado por cliente (ventas con --activo = TRUE) y muestra nombres, apellidos, email y total gastado, ordenado de mayor a menor.
-
-
 WITH gasto_total AS (
   SELECT 
     c.nombres, 
@@ -34,6 +31,8 @@ WITH ProductosVendidos AS (
         SUM(dv.subtotal) AS monto_total
     FROM Gguzman.detalle_venta dv
     INNER JOIN Gguzman.productos prod ON dv.id_producto = prod.id_producto
+    INNER JOIN Gguzman.ventas v ON dv.id_venta = v.id_venta 
+    WHERE v.total > 0  
     GROUP BY prod.id_producto, prod.nombre
 )
 SELECT 
@@ -63,7 +62,7 @@ WITH ProductividadEmpleados AS (
         ROUND(SUM(v.total) / COUNT(v.id_venta), 2) AS ticket_promedio
     FROM Gguzman.empleados e
     INNER JOIN Gguzman.ventas v ON e.id_empleado = v.id_empleado
-    WHERE v.total > 0  -- Ventas activas (considerando total > 0)
+    WHERE v.total > 0 
     GROUP BY e.id_empleado, e.nombres, e.apellidos, e.cargo
 )
 SELECT 
@@ -89,21 +88,19 @@ WITH IngresosPorCategoria AS (
     FROM Gguzman.detalle_venta dv
     INNER JOIN Gguzman.productos prod ON dv.id_producto = prod.id_producto
     INNER JOIN Gguzman.categorias cat ON prod.id_categoria = cat.id_categoria
-    WHERE dv.subtotal > 0  -- Solo productos/ventas activos
+    WHERE dv.subtotal > 0  
     GROUP BY cat.id_categoria, cat.nombre
-),
-TotalGeneral AS (
-    SELECT SUM(ingreso_total) AS total_ingresos
-    FROM IngresosPorCategoria
 )
 SELECT 
     ipc.id_categoria,
     ipc.categoria,
     ipc.ingreso_total,
-    ROUND((ipc.ingreso_total * 100.0 / tg.total_ingresos), 2) AS participacion_porcentual
+    ROUND((ipc.ingreso_total * 100.0 / 
+        (SELECT SUM(ingreso_total) FROM IngresosPorCategoria)
+    ), 2) AS participacion_porcentual
 FROM IngresosPorCategoria ipc
-CROSS JOIN TotalGeneral tg
 ORDER BY ipc.ingreso_total DESC;
+
 
 --5) Auditoría: ventas donde el total no coincide con la suma del detalle
 --Enunciado:
@@ -112,17 +109,16 @@ ORDER BY ipc.ingreso_total DESC;
 WITH TotalesCalculados AS (
     SELECT 
         dv.id_venta,
-        SUM(dv.subtotal) AS total_calculado,
-        COUNT(*) as cantidad_items
+        SUM(dv.subtotal) AS total_calculado
     FROM Gguzman.detalle_venta dv
     GROUP BY dv.id_venta
 )
 SELECT 
     v.id_venta,
     v.total AS total_declarado,
-    COALESCE(tc.total_calculado, 0) AS total_calculado,
-    ABS(COALESCE(v.total, 0) - COALESCE(tc.total_calculado, 0)) AS diferencia
+    tc.total_calculado,
+    v.total - tc.total_calculado AS diferencia
 FROM Gguzman.ventas v
-LEFT JOIN TotalesCalculados tc ON v.id_venta = tc.id_venta
-WHERE v.total > 0 OR tc.id_venta IS NOT NULL
-ORDER BY diferencia DESC;
+INNER JOIN TotalesCalculados tc ON v.id_venta = tc.id_venta
+WHERE v.total > 0
+ORDER BY ABS(v.total - tc.total_calculado) DESC;  
